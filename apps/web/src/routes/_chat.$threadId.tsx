@@ -171,7 +171,7 @@ const RightPanelInlineSidebar = (props: {
 };
 
 function ChatThreadRouteView() {
-  const threadsHydrated = useStore((store) => store.threadsHydrated);
+  const bootstrapComplete = useStore((store) => store.bootstrapComplete);
   const navigate = useNavigate();
   const threadId = Route.useParams({
     select: (params) => ThreadId.makeUnsafe(params.threadId),
@@ -248,7 +248,7 @@ function ChatThreadRouteView() {
   }, [activePanel, navigate, threadId]);
 
   useEffect(() => {
-    if (!threadsHydrated) {
+    if (!bootstrapComplete) {
       return;
     }
 
@@ -256,9 +256,9 @@ function ChatThreadRouteView() {
       void navigate({ to: "/", replace: true });
       return;
     }
-  }, [navigate, routeThreadExists, threadsHydrated, threadId]);
+  }, [bootstrapComplete, navigate, routeThreadExists, threadId]);
 
-  if (!threadsHydrated || !routeThreadExists) {
+  if (!bootstrapComplete || !routeThreadExists) {
     return null;
   }
 

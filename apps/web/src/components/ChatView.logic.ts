@@ -1,8 +1,9 @@
-import { ProjectId, type ModelSelection, type ThreadId } from "@t3tools/contracts";
-import { type ChatMessage, type Thread } from "../types";
+import { ProjectId, type ModelSelection, type ThreadId, type TurnId } from "@t3tools/contracts";
+import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
+import { useStore } from "../store";
 import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
@@ -10,6 +11,7 @@ import {
 } from "../lib/terminalContext";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
+export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 const WORKTREE_BRANCH_PREFIX = "t3code";
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
@@ -32,8 +34,8 @@ export function buildLocalDraftThread(
     messages: [],
     error,
     createdAt: draftThread.createdAt,
+    archivedAt: null,
     latestTurn: null,
-    lastVisitedAt: draftThread.createdAt,
     branch: draftThread.branch,
     worktreePath: draftThread.worktreePath,
     handoff: null,
@@ -41,6 +43,37 @@ export function buildLocalDraftThread(
     activities: [],
     proposedPlans: [],
   };
+}
+
+export function reconcileMountedTerminalThreadIds(input: {
+  currentThreadIds: ReadonlyArray<ThreadId>;
+  openThreadIds: ReadonlyArray<ThreadId>;
+  activeThreadId: ThreadId | null;
+  activeThreadTerminalOpen: boolean;
+  maxHiddenThreadCount?: number;
+}): ThreadId[] {
+  const openThreadIdSet = new Set(input.openThreadIds);
+  const hiddenThreadIds = input.currentThreadIds.filter(
+    (threadId) => threadId !== input.activeThreadId && openThreadIdSet.has(threadId),
+  );
+  const maxHiddenThreadCount = Math.max(
+    0,
+    input.maxHiddenThreadCount ?? MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  );
+  const nextThreadIds =
+    hiddenThreadIds.length > maxHiddenThreadCount
+      ? hiddenThreadIds.slice(-maxHiddenThreadCount)
+      : hiddenThreadIds;
+
+  if (
+    input.activeThreadId &&
+    input.activeThreadTerminalOpen &&
+    !nextThreadIds.includes(input.activeThreadId)
+  ) {
+    nextThreadIds.push(input.activeThreadId);
+  }
+
+  return nextThreadIds;
 }
 
 export function revokeBlobPreviewUrl(previewUrl: string | undefined): void {
@@ -74,8 +107,6 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   }
   return previewUrls;
 }
-
-export type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
 
 export interface PullRequestDialogState {
   initialReference: string | null;

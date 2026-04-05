@@ -32,7 +32,7 @@ export type ComposerCommandItem =
       id: string;
       type: "model";
       provider: ProviderKind;
-      model: ModelSlug;
+      model: string;
       label: string;
       description: string;
     }
@@ -53,8 +53,19 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!props.activeItemId || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(
+      `[data-composer-item-id="${CSS.escape(props.activeItemId)}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [props.activeItemId]);
+
   return (
     <Command
+      autoHighlight={false}
       mode="none"
       onItemHighlighted={(highlightedValue) => {
         props.onHighlightedItemChange(
@@ -70,6 +81,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
               item={item}
               resolvedTheme={props.resolvedTheme}
               isActive={props.activeItemId === item.id}
+              onHighlight={props.onHighlightedItemChange}
               onSelect={props.onSelect}
             />
           ))}
@@ -101,6 +113,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   item: ComposerCommandItem;
   resolvedTheme: "light" | "dark";
   isActive: boolean;
+  onHighlight: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
   if (props.item.type === "skill") {
@@ -143,10 +156,14 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   return (
     <CommandItem
       value={props.item.id}
+      data-composer-item-id={props.item.id}
       className={cn(
         "cursor-pointer select-none gap-2 rounded-lg px-3 py-2",
         props.isActive && "bg-accent/30 text-accent-foreground",
       )}
+      onMouseMove={() => {
+        if (!props.isActive) props.onHighlight(props.item.id);
+      }}
       onMouseDown={(event) => {
         event.preventDefault();
       }}

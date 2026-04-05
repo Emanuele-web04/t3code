@@ -15,7 +15,7 @@ describe("estimateTimelineMessageHeight", () => {
         role: "assistant",
         text: "a".repeat(144),
       }),
-    ).toBe(122);
+    ).toBe(86.5);
   });
 
   it("uses assistant sizing rules for system messages", () => {
@@ -24,7 +24,7 @@ describe("estimateTimelineMessageHeight", () => {
         role: "system",
         text: "a".repeat(144),
       }),
-    ).toBe(122);
+    ).toBe(86.5);
   });
 
   it("adds one attachment row for one or two user attachments", () => {
@@ -136,8 +136,8 @@ describe("estimateTimelineMessageHeight", () => {
       text: "a".repeat(200),
     };
 
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(188);
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 768 })).toBe(122);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(154.75);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 768 })).toBe(86.5);
   });
 
   it("adds diff summary chrome to assistant message estimates", () => {

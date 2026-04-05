@@ -17,13 +17,14 @@ import { useStore } from "../store";
 import { useTerminalStateStore } from "../terminalStateStore";
 
 export function useHandleNewThread() {
-  const projects = useStore((store) => store.projects);
-  const threads = useStore((store) => store.threads);
+  const projectIds = useStore(useShallow((store) => store.projects.map((project) => project.id)));
+  const projectOrder = useUiStateStore((store) => store.projectOrder);
   const navigate = useNavigate();
   const routeThreadId = useParams({
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
   });
+  const activeThread = useThreadById(routeThreadId);
   const activeDraftThread = useComposerDraftStore((store) =>
     routeThreadId ? (store.draftThreadsByThreadId[routeThreadId] ?? null) : null,
   );
@@ -203,8 +204,8 @@ export function useHandleNewThread() {
   return {
     activeDraftThread,
     activeThread,
+    defaultProjectId: orderedProjects[0] ?? null,
     handleNewThread,
-    projects,
     routeThreadId,
   };
 }

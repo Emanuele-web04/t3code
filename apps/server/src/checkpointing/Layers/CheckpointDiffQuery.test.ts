@@ -1,32 +1,30 @@
-import {
-  CheckpointRef,
-  DEFAULT_PROVIDER_INTERACTION_MODE,
-  ProjectId,
-  ThreadId,
-  TurnId,
-  type OrchestrationReadModel,
-} from "@t3tools/contracts";
-import { Effect, Layer } from "effect";
+import { CheckpointRef, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import { Effect, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionThreadCheckpointContext,
+} from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { checkpointRefForThreadTurn } from "../Utils.ts";
 import { CheckpointDiffQueryLive } from "./CheckpointDiffQuery.ts";
 import { CheckpointStore, type CheckpointStoreShape } from "../Services/CheckpointStore.ts";
 import { CheckpointDiffQuery } from "../Services/CheckpointDiffQuery.ts";
 
-function makeSnapshot(input: {
+function makeThreadCheckpointContext(input: {
   readonly projectId: ProjectId;
   readonly threadId: ThreadId;
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
   readonly checkpointTurnCount: number;
   readonly checkpointRef: CheckpointRef;
-}): OrchestrationReadModel {
+}): ProjectionThreadCheckpointContext {
   return {
-    snapshotSequence: 0,
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    projects: [
+    threadId: input.threadId,
+    projectId: input.projectId,
+    workspaceRoot: input.workspaceRoot,
+    worktreePath: input.worktreePath,
+    checkpoints: [
       {
         id: input.projectId,
         title: "Project",
@@ -95,7 +93,7 @@ describe("CheckpointDiffQueryLive", () => {
       readonly cwd: string;
     }> = [];
 
-    const snapshot = makeSnapshot({
+    const threadCheckpointContext = makeThreadCheckpointContext({
       projectId,
       threadId,
       workspaceRoot: "/tmp/workspace",
@@ -125,7 +123,12 @@ describe("CheckpointDiffQueryLive", () => {
       Layer.provideMerge(Layer.succeed(CheckpointStore, checkpointStore)),
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
-          getSnapshot: () => Effect.succeed(snapshot),
+          getSnapshot: () =>
+            Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
+          getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+          getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+          getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+          getThreadCheckpointContext: () => Effect.succeed(Option.some(threadCheckpointContext)),
         }),
       ),
     );
@@ -175,12 +178,11 @@ describe("CheckpointDiffQueryLive", () => {
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
           getSnapshot: () =>
-            Effect.succeed({
-              snapshotSequence: 0,
-              projects: [],
-              threads: [],
-              updatedAt: "2026-01-01T00:00:00.000Z",
-            } satisfies OrchestrationReadModel),
+            Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
+          getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+          getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+          getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+          getThreadCheckpointContext: () => Effect.succeed(Option.none()),
         }),
       ),
     );

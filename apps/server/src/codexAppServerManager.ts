@@ -19,7 +19,6 @@ import {
   type ProviderApprovalDecision,
   type ProviderEvent,
   type ProviderSession,
-  type ProviderSessionStartInput,
   type ProviderTurnStartResult,
   RuntimeMode,
   ProviderInteractionMode,
@@ -32,6 +31,15 @@ import {
   isCodexCliVersionSupported,
   parseCodexCliVersion,
 } from "./provider/codexCliVersion";
+import {
+  readCodexAccountSnapshot,
+  resolveCodexModelForAccount,
+  type CodexAccountSnapshot,
+} from "./provider/codexAccount";
+import { buildCodexInitializeParams, killCodexChildProcess } from "./provider/codexAppServer";
+
+export { buildCodexInitializeParams } from "./provider/codexAppServer";
+export { readCodexAccountSnapshot, resolveCodexModelForAccount } from "./provider/codexAccount";
 
 type PendingRequestKey = string;
 
@@ -157,7 +165,8 @@ export interface CodexAppServerStartSessionInput {
   readonly model?: string;
   readonly serviceTier?: string;
   readonly resumeCursor?: unknown;
-  readonly providerOptions?: ProviderSessionStartInput["providerOptions"];
+  readonly binaryPath: string;
+  readonly homePath?: string;
   readonly runtimeMode: RuntimeMode;
 }
 
@@ -188,50 +197,6 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "unknown thread",
   "does not exist",
 ];
-const CODEX_DEFAULT_MODEL = "gpt-5.3-codex";
-const CODEX_SPARK_MODEL = "gpt-5.3-codex-spark";
-const CODEX_SPARK_DISABLED_PLAN_TYPES = new Set<CodexPlanType>(["free", "go", "plus"]);
-
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-export function readCodexAccountSnapshot(response: unknown): CodexAccountSnapshot {
-  const record = asObject(response);
-  const account = asObject(record?.account) ?? record;
-  const accountType = asString(account?.type);
-
-  if (accountType === "apiKey") {
-    return {
-      type: "apiKey",
-      planType: null,
-      sparkEnabled: true,
-    };
-  }
-
-  if (accountType === "chatgpt") {
-    const planType = (account?.planType as CodexPlanType | null) ?? "unknown";
-    return {
-      type: "chatgpt",
-      planType,
-      sparkEnabled: !CODEX_SPARK_DISABLED_PLAN_TYPES.has(planType),
-    };
-  }
-
-  return {
-    type: "unknown",
-    planType: null,
-    sparkEnabled: true,
-  };
-}
-
 export const CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Plan Mode (Conversational)
 
 You work in 3 phases, and you should *chat your way* to a great plan before finalizing it. A great plan is very detailed-intent- and implementation-wise-so that it can be handed to another engineer or agent to be implemented right away. It must be **decision complete**, where the implementer does not need to make any decisions.
@@ -384,32 +349,13 @@ function mapCodexRuntimeMode(runtimeMode: RuntimeMode): {
   };
 }
 
-export function resolveCodexModelForAccount(
-  model: string | undefined,
-  account: CodexAccountSnapshot,
-): string | undefined {
-  if (model !== CODEX_SPARK_MODEL || account.sparkEnabled) {
-    return model;
-  }
-
-  return CODEX_DEFAULT_MODEL;
-}
-
 /**
  * On Windows with `shell: true`, `child.kill()` only terminates the `cmd.exe`
  * wrapper, leaving the actual command running. Use `taskkill /T` to kill the
  * entire process tree instead.
  */
 function killChildTree(child: ChildProcessWithoutNullStreams): void {
-  if (process.platform === "win32" && child.pid !== undefined) {
-    try {
-      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-      return;
-    } catch {
-      // fallback to direct kill
-    }
-  }
-  child.kill();
+  killCodexChildProcess(child);
 }
 
 export function normalizeCodexModelSlug(
@@ -570,9 +516,8 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         updatedAt: now,
       };
 
-      const codexOptions = readCodexProviderOptions(input);
-      const codexBinaryPath = codexOptions.binaryPath ?? "codex";
-      const codexHomePath = codexOptions.homePath;
+      const codexBinaryPath = input.binaryPath;
+      const codexHomePath = input.homePath;
       this.assertSupportedCodexCliVersion({
         binaryPath: codexBinaryPath,
         cwd: resolvedCwd,
@@ -1270,7 +1215,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
           continue;
         }
 
-        this.emitErrorEvent(context, "process/stderr", classified.message);
+        this.emitNotificationEvent(context, "process/stderr", classified.message);
       }
     });
 
@@ -1591,6 +1536,22 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     });
   }
 
+  private emitNotificationEvent(
+    context: CodexSessionContext,
+    method: string,
+    message: string,
+  ): void {
+    this.emitEvent({
+      id: EventId.makeUnsafe(randomUUID()),
+      kind: "notification",
+      provider: "codex",
+      threadId: context.session.threadId,
+      createdAt: new Date().toISOString(),
+      method,
+      message,
+    });
+  }
+
   private emitEvent(event: ProviderEvent): void {
     this.emit("event", event);
   }
@@ -1898,20 +1859,6 @@ function normalizeProviderThreadId(value: string | undefined): string | undefine
   return brandIfNonEmpty(value, (normalized) => normalized);
 }
 
-function readCodexProviderOptions(input: CodexAppServerStartSessionInput): {
-  readonly binaryPath?: string;
-  readonly homePath?: string;
-} {
-  const options = input.providerOptions?.codex;
-  if (!options) {
-    return {};
-  }
-  return {
-    ...(options.binaryPath ? { binaryPath: options.binaryPath } : {}),
-    ...(options.homePath ? { homePath: options.homePath } : {}),
-  };
-}
-
 function assertSupportedCodexCliVersion(input: {
   readonly binaryPath: string;
   readonly cwd: string;
@@ -1965,7 +1912,11 @@ function readResumeCursorThreadId(resumeCursor: unknown): string | undefined {
   return typeof rawThreadId === "string" ? normalizeProviderThreadId(rawThreadId) : undefined;
 }
 
-function readResumeThreadId(input: CodexAppServerStartSessionInput): string | undefined {
+function readResumeThreadId(input: {
+  readonly resumeCursor?: unknown;
+  readonly threadId?: ThreadId;
+  readonly runtimeMode?: RuntimeMode;
+}): string | undefined {
   return readResumeCursorThreadId(input.resumeCursor);
 }
 

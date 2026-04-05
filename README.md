@@ -2,7 +2,7 @@
 
 DP Code is a minimal web GUI for coding agents (currently Codex and Claude, more coming soon).
 
-## How to use
+## Installation
 
 > [!WARNING]
 > You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for DP Code to work.
@@ -11,15 +11,35 @@ DP Code is a minimal web GUI for coding agents (currently Codex and Claude, more
 npx t3
 ```
 
-You can also just install the desktop app. It's cooler.
+### Desktop app
 
-Install the [desktop app from the Releases page](https://github.com/pingdotgg/t3code/releases)
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+
+#### Windows (`winget`)
+
+```bash
+winget install T3Tools.T3Code
+```
+
+#### macOS (Homebrew)
+
+```bash
+brew install --cask t3-code
+```
+
+#### Arch Linux (AUR)
+
+```bash
+yay -S t3code-bin
+```
 
 ## Some notes
 
 We are very very early in this project. Expect bugs.
 
 We are not accepting contributions yet.
+
+Observability guide: [docs/observability.md](./docs/observability.md)
 
 ## If you REALLY want to contribute still.... read this first
 
